@@ -16,7 +16,7 @@ module Wordle
 
     def top_rated_word
       rate_words
-      @guesses = @guesses + 1
+      @guesses += 1
       @current_guess = (@possibilities.min_by { |k, v| -v })[0]
       @current_guess
     end
@@ -105,6 +105,16 @@ module Wordle
       0
     end
 
+    # Use positional logic for treating dupes
+    def count_dupes_by_position
+      false
+    end
+
+    # When looking at word list possibilities, exclude words that are ineligible
+    def limit_distribution_to_eligible_words
+      true
+    end
+
     def quiet?
       @options.key?(:quiet)
     end
@@ -136,7 +146,7 @@ module Wordle
       regex_pattern
     end
 
-    def eligable?(word)
+    def eligible?(word)
       regex_pattern = create_regex_pattern
 
       return false unless word.match?(regex_pattern)
@@ -158,18 +168,23 @@ module Wordle
 
       word_list.each do |word|
         rating = 0
-        next unless eligable?(word)
+        next unless eligible?(word)
 
 
         char_occurance = {}
         word_to_hash(word).each do |index, letter|
-          if char_occurance.key?(letter)
-            char_occurance[letter] += 1
+          if count_dupes_by_position
+            if char_occurance.key?(letter)
+              char_occurance[letter] += 1
+            else
+              char_occurance[letter] = 0
+            end
+            occurance = char_occurance[letter]
+            rating += distribution[index.to_s][letter][occurance]
           else
-            char_occurance[letter] = 0
+            rating += distribution[index.to_s][letter]
           end
-          occurance = char_occurance[letter]
-          rating += distribution[index.to_s][letter][occurance]
+
         end
         @possibilities[word] = rating
       end
@@ -188,13 +203,17 @@ module Wordle
 
         char_occurance = {}
         word_to_hash(word).each do |index, letter|
-          if char_occurance.key?(letter)
-            char_occurance[letter] += 1
+          if count_dupes_by_position
+            if char_occurance.key?(letter)
+              char_occurance[letter] += 1
+            else
+              char_occurance[letter] = 0
+            end
+            occurance = char_occurance[letter]
+            positional_distribution[index.to_s][letter][occurance] += 1
           else
-            char_occurance[letter] = 0
+            positional_distribution[index.to_s][letter] += 1
           end
-          occurance = char_occurance[letter]
-          positional_distribution[index.to_s][letter][occurance] += 1
         end
       end
       positional_distribution
@@ -204,7 +223,7 @@ module Wordle
     def empty_distribution
       distribution = {}
       ('a'..'z').each do |letter|
-        distribution[letter] = [0, 0, 0, 0, 0]
+        distribution[letter] = count_dupes_by_position ? [0, 0, 0, 0, 0] : 0
       end
       distribution
     end
