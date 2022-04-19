@@ -6,6 +6,7 @@ abaca
 abaci
 abacs
 abaft
+saice
 abaka
 abamp
 aband
@@ -1962,7 +1963,6 @@ crunk
 cruor
 crura
 cruse
-crusy
 cruve
 crwth
 cryer
@@ -7843,14 +7843,12 @@ sagos
 sagum
 saheb
 sahib
-saice
 saick
 saics
 saids
 saiga
 sails
 saims
-saine
 sains
 sairs
 saist
@@ -8528,7 +8526,6 @@ snush
 snyes
 soaks
 soaps
-soare
 soars
 soave
 sobas
