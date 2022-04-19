@@ -12,14 +12,14 @@ module TestWordle
 
     describe 'when provided existing guesses' do
       it 'responds with a word' do
-        exact_counts = {'s' => 0, 'a' => 0, 'i' => 0, 'n' => 0, 't' => 0, 'c' => 0, 'v' => 0}
-        included_letters = {'o' => 1, 'e' => 1, 'y' => 1}
+        max_counts = {'s' => 0, 'a' => 0, 'i' => 0, 'n' => 0, 't' => 0, 'c' => 0, 'v' => 0}
+        min_counts = {'o' => 1, 'e' => 1, 'y' => 1}
         found_letters = [nil, 'o', nil, 'e', nil]
 
         wordle = Wordle::Wordle.new({
                                       "debug": true,
-                                      "exact_counts": exact_counts,
-                                      "included_letters": included_letters,
+                                      "max_counts": max_counts,
+                                      "min_counts": min_counts,
                                       "found_letters": found_letters}
         )
         puts wordle.top_rated_word

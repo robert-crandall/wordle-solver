@@ -6,11 +6,14 @@ possible_answers = File.read('possible_answers.txt').split
 # https://ruby-doc.org/stdlib-3.1.1/libdoc/getoptlong/rdoc/GetoptLong.html
 opts = GetoptLong.new(
   [ '--name', '-n',  GetoptLong::REQUIRED_ARGUMENT ],
-  [ '--small', '-s', GetoptLong::NO_ARGUMENT ]
+  [ '--small', '-s', GetoptLong::NO_ARGUMENT ],
+  [ '--word', '-w',  GetoptLong::OPTIONAL_ARGUMENT ]
 )
 
 test_name = nil
 @small = false
+@test_word = nil
+@debug = false
 
 opts.each do |opt, arg|
   case opt
@@ -18,6 +21,9 @@ opts.each do |opt, arg|
     test_name = arg
   when '--small'
     @small = true
+  when '--word'
+    @test_word = arg
+    @debug = true
   end
 end
 
@@ -53,20 +59,23 @@ end
 @word_results = {}
 
 def count_answer_tries(answer)
-  wordle = Wordle::Wordle.new({"quiet": true})
+  options = {
+    "quiet": true
+  }
+  options[:debug] = true if @debug
+
+  wordle = Wordle::Wordle.new(options)
   server = Wordle::Server.new(answer)
-  # puts "Looking for #{server.answer}"
+  puts "Looking for #{server.answer}" if @debug
   i = 0
 
   until wordle.found?
     i += 1
     top_word = wordle.top_rated_word
-    #puts "Trying #{top_word}"
+    puts "Trying #{top_word}" if @debug
     wordle.parse_answer(server.parse_guess(top_word))
   end
-  if i > 6
-    puts "Word failed, #{server.answer} took #{i} tries"
-  end
+  puts "Word failed, #{server.answer} took #{i} tries" if i > 6
   @word_results[answer] = i
 end
 
@@ -76,8 +85,10 @@ total_words = possible_answers.length
 i = 0
 
 possible_answers.each do |answer|
-  if i % 100 == 0
-    puts "On word #{i} of #{total_words}"
+  puts "On word #{i} of #{total_words}" if i % 100 == 0
+  if @test_word
+    self.count_answer_tries(@test_word)
+    exit!
   end
   self.count_answer_tries(answer)
   i += 1

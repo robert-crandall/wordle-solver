@@ -32,8 +32,8 @@ module Wordle
     def parse_answer(answer)
       answer = answer.downcase
       if answer == 'xxxxx'
-        remove_word_from_guesses
-        return
+        puts "Removing word from list isn't implemented, sorry!"
+        exit!
       end
 
       if answer == 'yyyyy'
@@ -41,57 +41,37 @@ module Wordle
         @found = true
       end
 
-      @included_letters = {} # Reset hash
+      green_letters = []
+      yellow_letters = []
 
-      # parse over first time to create special Y cases
-      i = 0
-      answer.each_char do |letter|
-        case letter
+      # parse over first time to create counts of found letters
+      (0..4).each do |i|
+        case answer[i]
         when 'y'
           @found_letters[i] = @current_guess[i]
-          if @included_letters.key?(@current_guess[i])
-            @included_letters[@current_guess[i]] += 1
-          else
-            @included_letters[@current_guess[i]] = 1
-          end
-        end
-        i += 1
-      end
-
-      # Again for other cases
-      i = 0
-      answer.each_char do |letter|
-        case letter
+          green_letters.push(@current_guess[i])
         when 'm'
-          if @included_letters.key?(@current_guess[i])
-            @included_letters[@current_guess[i]] += 1
-          else
-            @included_letters[@current_guess[i]] = 1
-          end
           @maybe_letters[i] << @current_guess[i]
+          yellow_letters.push(@current_guess[i])
         end
-        i += 1
       end
 
-      # Again for other cases
-      i = 0
-      answer.each_char do |letter|
-        case letter
+      # parse again in order to handle N letters
+      (0..4).each do |i|
+        letter = @current_guess[i]
+        case answer[i]
         when 'n'
-          @exact_counts[@current_guess[i]] = if @included_letters.key?(@current_guess[i])
-            @included_letters[@current_guess[i]]
-          else
-            0
-                                             end
+          @max_counts[letter] = green_letters.count(letter) + yellow_letters.count(letter)
+        when 'm'
+          @min_counts[letter] = green_letters.count(letter) + yellow_letters.count(letter)
         end
-        i += 1
       end
 
       return unless debug?
 
       puts "Pattern: #{create_regex_pattern}"
-      puts "Excluded: #{@exact_counts}"
-      puts "Included: #{@included_letters}"
+      puts "Max Counts: #{@max_counts}"
+      puts "Min Counts: #{@min_counts}"
     end
 
     private
@@ -123,6 +103,11 @@ module Wordle
       true
     end
 
+    # Should letter distribution be based on answers only?
+    def distribution_by_full_word_list
+      false
+    end
+
     def quiet?
       @options.key?(:quiet)
     end
@@ -132,9 +117,9 @@ module Wordle
     end
 
     def create_word_arrays
-      @exact_counts = @options.key?(:exact_counts) ? @options[:exact_counts] : {}
+      @max_counts = @options.key?(:max_counts) ? @options[:max_counts] : {}
 
-      @included_letters = @options.key?(:included_letters) ? @options[:included_letters] : {}
+      @min_counts = @options.key?(:min_counts) ? @options[:min_counts] : {}
       @found_letters = @options.key?(:found_letters) ? @options[:found_letters] : [nil, nil, nil, nil, nil]
 
       @maybe_letters = [[], [], [], [], []]
@@ -179,7 +164,6 @@ module Wordle
 
       word_list.each do |word|
         next unless eligible?(word)
-
         @possibilities[word] = count_dupes_by_position ? rate_word_by_positional_dupes(word) : rate_word(word)
       end
     end
@@ -270,7 +254,7 @@ module Wordle
 
     # Does the given word contain any excluded letters?
     def contains_excluded?(word)
-      @exact_counts.each do |letter, count|
+      @max_counts.each do |letter, count|
         return true if word.count(letter) > count
       end
       false
@@ -278,7 +262,7 @@ module Wordle
 
     # Does the given word include all the included letters?
     def contains_included?(word)
-      @included_letters.each do |letter, count|
+      @min_counts.each do |letter, count|
         return false if word.count(letter) < count
         # return false unless word.include?(letter)
       end
