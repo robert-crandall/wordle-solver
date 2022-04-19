@@ -60,7 +60,6 @@ module TestWordle
       it 'suggests correct number of duplicates' do
         client = Wordle::Server.new('trees')
         response = client.parse_guess('eette')
-        puts response
         assert response == 'mmmnn'
       end
     end

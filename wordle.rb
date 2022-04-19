@@ -8,21 +8,25 @@ module Wordle
       @options = opts
       dir = File.dirname(__FILE__)
       @possible_answers = File.read(File.join(dir, 'possible_answers.txt')).split
-      @guess_word_list = File.read(File.join(dir, 'possible_answers.txt')).split
-      @guess_word_list.concat(File.read(File.join(dir, 'guess_word_list.txt')).split) if full_guess_list?
-
+      @guess_word_list = File.read(File.join(dir, 'guess_word_list.txt')).split
+      @guesses = 0
       @found = false
       create_word_arrays
     end
 
     def top_rated_word
       rate_words
+      @guesses = @guesses + 1
       @current_guess = (@possibilities.min_by { |k, v| -v })[0]
       @current_guess
     end
 
     def found?
       @found
+    end
+
+    def guesses
+      @guesses
     end
 
     def parse_answer(answer)
@@ -96,6 +100,11 @@ module Wordle
       @options.key?(:full_guess_list)
     end
 
+    # How many times to use full word list until switching to answers only list?
+    def full_guess_list_until
+      0
+    end
+
     def quiet?
       @options.key?(:quiet)
     end
@@ -115,30 +124,41 @@ module Wordle
 
     def create_regex_pattern
       regex_pattern = ''
-      (0..MAX_LENGTH-1).each do |index|
-        if @found_letters[index]
-          regex_pattern << @found_letters[index]
+      (0..MAX_LENGTH - 1).each do |index|
+        regex_pattern << if @found_letters[index]
+          @found_letters[index]
         elsif @maybe_letters[index].length > 0
-          excluded = @maybe_letters[index].join('')
-          regex_pattern << "[^#{excluded}]"
+          "[^#{@maybe_letters[index].join('')}]"
         else
-          regex_pattern << '[a-z]'
+          '[a-z]'
         end
       end
       regex_pattern
     end
 
+    def eligable?(word)
+      regex_pattern = create_regex_pattern
+
+      return false unless word.match?(regex_pattern)
+      return false if contains_excluded?(word)
+      return false unless contains_included?(word)
+      true
+    end
+
     # Look over possible guesses, and rates them according to the given distribution
     def rate_words
       distribution = create_distribution
-      regex_pattern = create_regex_pattern
+
       @possibilities = {}
 
-      @guess_word_list.each do |word|
+      word_list = @possible_answers
+      if guesses < full_guess_list_until
+        word_list = @possible_answers + @guess_word_list
+      end
+
+      word_list.each do |word|
         rating = 0
-        next unless word.match?(regex_pattern)
-        next if contains_excluded?(word)
-        next unless contains_included?(word)
+        next unless eligable?(word)
 
 
         char_occurance = {}
@@ -192,7 +212,7 @@ module Wordle
     # Holds a map of character positions with character counts in it
     def empty_positional_distribution
       positional_distribution = {}
-      (0..MAX_LENGTH-1).each do |position|
+      (0..MAX_LENGTH - 1).each do |position|
         positional_distribution[position.to_s] = empty_distribution
       end
       positional_distribution
