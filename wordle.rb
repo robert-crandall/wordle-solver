@@ -82,9 +82,9 @@ module Wordle
 
     # How many times to use full word list until switching to answers only list?
     # Improvement at 1 for small list, bad for large list
-    # TODO - retest after changing dupes and limits
+    # Tested again - went from 14 to 23 failures
     def full_guess_list_until
-      0
+      1
     end
 
     # Use positional logic for treating dupes
@@ -103,9 +103,9 @@ module Wordle
       true
     end
 
-    # Should letter distribution be based on answers only?
-    def distribution_by_full_word_list
-      false
+    # Prefer rating unfound letters in order to maximize guessing
+    def maximize_unknown_letters
+      true
     end
 
     def quiet?
@@ -164,6 +164,7 @@ module Wordle
 
       word_list.each do |word|
         next unless eligible?(word)
+
         @possibilities[word] = count_dupes_by_position ? rate_word_by_positional_dupes(word) : rate_word(word)
       end
     end
@@ -186,6 +187,7 @@ module Wordle
     def rate_word(word)
       rating = 0
       word_to_hash(word).each do |index, letter|
+
         rating += @positional_distribution[index.to_s][letter]
       end
       rating
@@ -216,7 +218,9 @@ module Wordle
     def create_distribution
       @positional_distribution = empty_positional_distribution
 
-      @possible_answers.each do |word|
+      word_list = @possible_answers # Having this be full word list saw more failures
+
+      word_list.each do |word|
         next if limit_distribution_to_eligible_words && !eligible?(word)
 
         count_dupes_by_position ? distribution_by_positional_duplicates(word) : distribution_by_letter(word)
