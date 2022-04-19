@@ -140,16 +140,20 @@ module Wordle
       @maybe_letters = [[], [], [], [], []]
     end
 
+    def regex_for_index(index)
+      if @found_letters[index]
+        @found_letters[index]
+      elsif !@maybe_letters[index].empty?
+        "[^#{@maybe_letters[index].join('')}]"
+      else
+        '[a-z]'
+      end
+    end
+
     def create_regex_pattern
       regex_pattern = ''
       (0..MAX_LENGTH - 1).each do |index|
-        regex_pattern << if @found_letters[index]
-          @found_letters[index]
-        elsif !@maybe_letters[index].empty?
-          "[^#{@maybe_letters[index].join('')}]"
-        else
-          '[a-z]'
-        end
+        regex_pattern << regex_for_index(index)
       end
       regex_pattern
     end
@@ -166,7 +170,7 @@ module Wordle
 
     # Look over possible guesses, and rates them according to the given distribution
     def rate_words
-      distribution = create_distribution
+      create_distribution
 
       @possibilities = {}
 
@@ -174,32 +178,51 @@ module Wordle
       word_list = @possible_answers + @guess_word_list if guesses < full_guess_list_until
 
       word_list.each do |word|
-        rating = 0
         next unless eligible?(word)
 
-        if count_dupes_by_position
-          char_occurance = {}
-          word_to_hash(word).each do |index, letter|
-            if count_dupes_by_position
-              if char_occurance.key?(letter)
-                char_occurance[letter] += 1
-              else
-                char_occurance[letter] = 0
-              end
-              occurance = char_occurance[letter]
-              rating += distribution[index.to_s][letter][occurance]
-            end
-          end
-        end
+        @possibilities[word] = count_dupes_by_position ? rate_word_by_positional_dupes(word) : rate_word(word)
+      end
+    end
 
-        # Easier to remove when necessary
-        unless count_dupes_by_position
-          word_to_hash(word).each do |index, letter|
-            rating += distribution[index.to_s][letter]
-          end
+    def rate_word_by_positional_dupes(word)
+      rating = 0
+      char_occurence = {}
+      word_to_hash(word).each do |index, letter|
+        if char_occurence.key?(letter)
+          char_occurence[letter] += 1
+        else
+          char_occurence[letter] = 0
         end
+        occurance = char_occurence[letter]
+        rating += @positional_distribution[index.to_s][letter][occurance]
+      end
+      rating
+    end
 
-        @possibilities[word] = rating
+    def rate_word(word)
+      rating = 0
+      word_to_hash(word).each do |index, letter|
+        rating += @positional_distribution[index.to_s][letter]
+      end
+      rating
+    end
+
+    def distribution_by_positional_duplicates(word)
+      char_occurance = {}
+      word_to_hash(word).each do |index, letter|
+        if char_occurance.key?(letter)
+          char_occurance[letter] += 1
+        else
+          char_occurance[letter] = 0
+        end
+        occurance = char_occurance[letter]
+        @positional_distribution[index.to_s][letter][occurance] += 1
+      end
+    end
+
+    def distribution_by_letter(word)
+      word_to_hash(word).each do |index, letter|
+        @positional_distribution[index.to_s][letter] += 1
       end
     end
 
@@ -207,27 +230,13 @@ module Wordle
     # IE, given words cat and cow:
     # c is 2 likely to be at position 0
     def create_distribution
-      positional_distribution = empty_positional_distribution
+      @positional_distribution = empty_positional_distribution
 
       @possible_answers.each do |word|
         next if limit_distribution_to_eligible_words && !eligible?(word)
 
-        char_occurance = {}
-        word_to_hash(word).each do |index, letter|
-          if count_dupes_by_position
-            if char_occurance.key?(letter)
-              char_occurance[letter] += 1
-            else
-              char_occurance[letter] = 0
-            end
-            occurance = char_occurance[letter]
-            positional_distribution[index.to_s][letter][occurance] += 1
-          else
-            positional_distribution[index.to_s][letter] += 1
-          end
-        end
+        count_dupes_by_position ? distribution_by_positional_duplicates(word) : distribution_by_letter(word)
       end
-      positional_distribution
     end
 
     # Holds letters and counts of those letters
