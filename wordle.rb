@@ -112,7 +112,7 @@ module Wordle
 
     # When looking at word list possibilities, exclude words that are ineligible
     def limit_distribution_to_eligible_words
-      true
+      false
     end
 
     def quiet?
@@ -162,9 +162,7 @@ module Wordle
       @possibilities = {}
 
       word_list = @possible_answers
-      if guesses < full_guess_list_until
-        word_list = @possible_answers + @guess_word_list
-      end
+      word_list = @possible_answers + @guess_word_list if guesses < full_guess_list_until
 
       word_list.each do |word|
         rating = 0
@@ -196,10 +194,8 @@ module Wordle
     def create_distribution
       positional_distribution = empty_positional_distribution
 
-      regex_pattern = create_regex_pattern
-
       @possible_answers.each do |word|
-        next unless word.match?(regex_pattern)
+        next if limit_distribution_to_eligible_words && !eligible?(word)
 
         char_occurance = {}
         word_to_hash(word).each do |index, letter|
@@ -293,12 +289,10 @@ module Wordle
         letter = guess[i]
         answer_count = answer.count(letter)
         found_count = green_letters.count(letter) + yellow_letters.count(letter)
-        if answer_count > found_count
-          if response[i] != 'y'
+        if answer_count > found_count && (response[i] != 'y')
             response[i] = 'm'
             yellow_letters.push(letter)
           end
-        end
       end
       response.join('')
     end
