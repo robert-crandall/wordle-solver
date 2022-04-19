@@ -4,24 +4,15 @@ module Wordle
   class Wordle
     MAX_LENGTH = 5
 
-
     def initialize(opts = {})
       @options = opts
       dir = File.dirname(__FILE__)
       @possible_answers = File.read(File.join(dir, 'possible_answers.txt')).split
       @guess_word_list = File.read(File.join(dir, 'possible_answers.txt')).split
-      if full_guess_list?
-        @guess_word_list.concat(File.read(File.join(dir, 'guess_word_list.txt')).split)
-      end
-      @exact_counts = {}
-      @included_letters = {}
-      @maybe_letters = []
-      @found_letters = []
+      @guess_word_list.concat(File.read(File.join(dir, 'guess_word_list.txt')).split) if full_guess_list?
+
       @found = false
-      (0..MAX_LENGTH - 1).each do |index|
-        @maybe_letters << []
-        @found_letters << nil
-      end
+      create_word_arrays
     end
 
     def top_rated_word
@@ -42,7 +33,7 @@ module Wordle
       end
 
       if answer == 'yyyyy'
-        puts 'Congrats!! Found the word!!'
+        puts 'Congrats!! Found the word!!' unless quiet?
         @found = true
       end
 
@@ -83,30 +74,43 @@ module Wordle
       answer.each_char do |letter|
         case letter
         when 'n'
-          if @included_letters.key?(@current_guess[i])
-            @exact_counts[@current_guess[i]] = @included_letters[@current_guess[i]]
+          @exact_counts[@current_guess[i]] = if @included_letters.key?(@current_guess[i])
+            @included_letters[@current_guess[i]]
           else
-            @exact_counts[@current_guess[i]] = 0
-          end
+            0
+                                             end
         end
         i += 1
       end
 
-      if debug?
-        puts "Pattern: #{create_regex_pattern}"
-        puts "Excluded: #{@exact_counts}"
-        puts "Included: #{@included_letters}"
-      end
+      return unless debug?
+
+      puts "Pattern: #{create_regex_pattern}"
+      puts "Excluded: #{@exact_counts}"
+      puts "Included: #{@included_letters}"
     end
 
     private
 
     def full_guess_list?
-      @options.has_key?(:full_guess_list)
+      @options.key?(:full_guess_list)
+    end
+
+    def quiet?
+      @options.key?(:quiet)
     end
 
     def debug?
-      @options.has_key?(:full_guess_list)
+      @options.key?(:debug)
+    end
+
+    def create_word_arrays
+      @exact_counts = @options.key?(:exact_counts) ? @options[:exact_counts] : {}
+
+      @included_letters = @options.key?(:included_letters) ? @options[:included_letters] : {}
+      @found_letters = @options.key?(:found_letters) ? @options[:found_letters] : [nil, nil, nil, nil, nil]
+
+      @maybe_letters = [[], [], [], [], []]
     end
 
     def create_regex_pattern
@@ -223,4 +227,41 @@ module Wordle
     end
   end
 
+  class Server
+    def initialize(word)
+      @answer = word
+    end
+
+    def answer
+      @answer
+    end
+
+    def parse_guess(guess_str)
+      response = %w[n n n n n]
+      guess = guess_str.split('')
+      answer = @answer.split('')
+      green_letters = []
+      yellow_letters = []
+
+      (0..4).each do |i|
+        if answer[i] == guess[i]
+          response[i] = 'y'
+          green_letters.push(guess[i])
+        end
+      end
+
+      (0..4).each do |i|
+        letter = guess[i]
+        answer_count = answer.count(letter)
+        found_count = green_letters.count(letter) + yellow_letters.count(letter)
+        if answer_count > found_count
+          if response[i] != 'y'
+            response[i] = 'm'
+            yellow_letters.push(letter)
+          end
+        end
+      end
+      response.join('')
+    end
+  end
 end
