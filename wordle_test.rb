@@ -22,6 +22,7 @@ module TestWordle
                                       "included_letters": included_letters,
                                       "found_letters": found_letters}
         )
+        puts wordle.top_rated_word
         assert wordle.top_rated_word == 'foyer'
       end
     end

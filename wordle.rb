@@ -101,18 +101,26 @@ module Wordle
     end
 
     # How many times to use full word list until switching to answers only list?
+    # Improvement at 1 for small list, bad for large list
+    # TODO - retest after changing dupes and limits
     def full_guess_list_until
       0
     end
 
     # Use positional logic for treating dupes
+    # When false:
+    # Small moved from 10 to 4 failures
+    # Full moved from 19 to 17 failures
     def count_dupes_by_position
       false
     end
 
     # When looking at word list possibilities, exclude words that are ineligible
+    # When true:
+    # Small avg count goes from 4 to 3.5, no change on failed counts
+    # Full avg count from 3.75 to 3.6, failure from 17 to 14
     def limit_distribution_to_eligible_words
-      false
+      true
     end
 
     def quiet?
@@ -137,7 +145,7 @@ module Wordle
       (0..MAX_LENGTH - 1).each do |index|
         regex_pattern << if @found_letters[index]
           @found_letters[index]
-        elsif @maybe_letters[index].length > 0
+        elsif !@maybe_letters[index].empty?
           "[^#{@maybe_letters[index].join('')}]"
         else
           '[a-z]'
@@ -152,6 +160,7 @@ module Wordle
       return false unless word.match?(regex_pattern)
       return false if contains_excluded?(word)
       return false unless contains_included?(word)
+
       true
     end
 
@@ -168,22 +177,28 @@ module Wordle
         rating = 0
         next unless eligible?(word)
 
-
-        char_occurance = {}
-        word_to_hash(word).each do |index, letter|
-          if count_dupes_by_position
-            if char_occurance.key?(letter)
-              char_occurance[letter] += 1
-            else
-              char_occurance[letter] = 0
+        if count_dupes_by_position
+          char_occurance = {}
+          word_to_hash(word).each do |index, letter|
+            if count_dupes_by_position
+              if char_occurance.key?(letter)
+                char_occurance[letter] += 1
+              else
+                char_occurance[letter] = 0
+              end
+              occurance = char_occurance[letter]
+              rating += distribution[index.to_s][letter][occurance]
             end
-            occurance = char_occurance[letter]
-            rating += distribution[index.to_s][letter][occurance]
-          else
+          end
+        end
+
+        # Easier to remove when necessary
+        unless count_dupes_by_position
+          word_to_hash(word).each do |index, letter|
             rating += distribution[index.to_s][letter]
           end
-
         end
+
         @possibilities[word] = rating
       end
     end
