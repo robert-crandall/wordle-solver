@@ -69,6 +69,14 @@ module Wordle
         end
       end
 
+      # Keep possible answers clean
+
+      @possible_answers.each do |word|
+        unless eligible?(word)
+          @possible_answers -= [word]
+        end
+      end
+
       return unless debug?
 
       puts "Pattern: #{create_regex_pattern}"
@@ -77,14 +85,6 @@ module Wordle
     end
 
     private
-
-    # Use positional logic for treating dupes
-    # When false:
-    # Small moved from 10 to 4 failures
-    # Full moved from 19 to 17 failures
-    def count_dupes_by_position
-      false
-    end
 
     # When looking at word list possibilities, exclude words that are ineligible
     # When true:
@@ -98,8 +98,11 @@ module Wordle
     # 2 - small goes 4 to 1; full goes 14 to 11
     # 3 - full goes 14 to 15
     def maximize_unknown_letters?
-      found_letters = @min_counts.values.sum
-      guesses < 2 && found_letters < 5
+      guesses < 2 && found_letters_count < 5
+    end
+
+    def found_letters_count
+      @min_counts.values.sum
     end
 
     def quiet?
@@ -108,6 +111,10 @@ module Wordle
 
     def debug?
       @options.key?(:debug)
+    end
+
+    def manual_debug?
+      @possible_answers.length < 100
     end
 
     def create_word_arrays
@@ -147,6 +154,18 @@ module Wordle
       true
     end
 
+    def possible_letters
+      possible_letters = empty_distribution
+      @possible_answers.each do |word|
+        word_to_hash(word).each do |index, letter|
+          next if @found_letters[index] # Don't count letters at known positions
+          next if @max_counts.key?(letter)
+          possible_letters[letter] += 1
+        end
+      end
+      possible_letters
+    end
+
     # Look over possible guesses, and rates them according to the given distribution
     def rate_words
       create_distribution
@@ -155,26 +174,54 @@ module Wordle
 
       word_list = @possible_answers
 
-      word_list.each do |word|
-        unless maximize_unknown_letters?
-          next unless eligible?(word)
+      case found_letters_count
+      when 0..2
+        word_list = @possible_answers
+        word_list.each do |word|
+          @possibilities[word] = rate_word(word)
         end
+      when 3..4
+        if @possible_answers.length == 1
+          word = @possible_answers[0]
+          @possibilities[word] = 100
+          return
+        end
+        # Find a word that matches the most letters
+        @distribution = possible_letters
+        needed_letters = @distribution.select { |_letter, count| count > 1 }
 
-        @possibilities[word] = count_dupes_by_position ? rate_word_by_positional_dupes(word) : rate_word(word)
+        puts "trying to rule out: #{needed_letters.to_s}"
+        word_list = @guess_word_list
+        word_list.each do |word|
+          @possibilities[word] = rate_word_for_uniquness(word)
+        end
+      else
+        word_list.each do |word|
+          @possibilities[word] = rate_word(word)
+        end
       end
+
     end
 
-    def rate_word_by_positional_dupes(word)
+    def rate_word_for_uniquness(word)
       rating = 0
-      char_occurence = {}
+      seen_letters = []
+
       word_to_hash(word).each do |index, letter|
-        if char_occurence.key?(letter)
-          char_occurence[letter] += 1
-        else
-          char_occurence[letter] = 0
-        end
-        occurance = char_occurence[letter]
-        rating += @positional_distribution[index.to_s][letter][occurance]
+        next if @maybe_letters[index].include?(letter)
+        next if @max_counts.key?(letter)
+        next if seen_letters.include?(letter)
+        rating += @distribution[letter]
+        seen_letters.push(letter)
+      end
+      rating
+    end
+
+    def rate_word_positional(word)
+      rating = 0
+
+      word_to_hash(word).each do |index, letter|
+        rating += @positional_distribution[index.to_s][letter]
       end
       rating
     end
@@ -184,7 +231,9 @@ module Wordle
       seen_letters = []
 
       word_to_hash(word).each do |index, letter|
-        rating += @positional_distribution[index.to_s][letter]
+        # rating += @positional_distribution[index.to_s][letter]
+        next if seen_letters.include?(letter)
+        rating += @distribution[letter]
         seen_letters.push(letter)
       end
       rating
@@ -203,9 +252,17 @@ module Wordle
       end
     end
 
-    def distribution_by_letter(word)
+    def positional_distribution_by_letter(word)
       word_to_hash(word).each do |index, letter|
         @positional_distribution[index.to_s][letter] += 1
+      end
+    end
+
+    def distribution_by_letter(word)
+      word_to_hash(word).each do |index, letter|
+        next if @found_letters[index]
+
+        @distribution[letter] += 1
       end
     end
 
@@ -214,13 +271,15 @@ module Wordle
     # c is 2 likely to be at position 0
     def create_distribution
       @positional_distribution = empty_positional_distribution
+      @distribution = empty_distribution
 
-      word_list = @possible_answers # Having this be full word list saw more failures
+      word_list = @possible_answers
 
       word_list.each do |word|
         next if limit_distribution_to_eligible_words && !eligible?(word)
 
-        count_dupes_by_position ? distribution_by_positional_duplicates(word) : distribution_by_letter(word)
+        positional_distribution_by_letter(word)
+        distribution_by_letter(word)
       end
     end
 
@@ -228,7 +287,7 @@ module Wordle
     def empty_distribution
       distribution = {}
       ('a'..'z').each do |letter|
-        distribution[letter] = count_dupes_by_position ? [0, 0, 0, 0, 0] : 0
+        distribution[letter] = 0
       end
       distribution
     end
