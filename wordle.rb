@@ -64,6 +64,8 @@ module Wordle
           @max_counts[letter] = green_letters.count(letter) + yellow_letters.count(letter)
         when 'm'
           @min_counts[letter] = green_letters.count(letter) + yellow_letters.count(letter)
+        when 'y'
+          @min_counts[letter] = green_letters.count(letter) + yellow_letters.count(letter)
         end
       end
 
@@ -75,17 +77,6 @@ module Wordle
     end
 
     private
-
-    def full_guess_list?
-      @options.key?(:full_guess_list)
-    end
-
-    # How many times to use full word list until switching to answers only list?
-    # Improvement at 1 for small list, bad for large list
-    # Tested again - went from 14 to 23 failures
-    def full_guess_list_until
-      1
-    end
 
     # Use positional logic for treating dupes
     # When false:
@@ -103,9 +94,12 @@ module Wordle
       true
     end
 
-    # Prefer rating unfound letters in order to maximize guessing
-    def maximize_unknown_letters
-      true
+    # Prefer rating unknown letters in order to maximize guessing
+    # 2 - small goes 4 to 1; full goes 14 to 11
+    # 3 - full goes 14 to 15
+    def maximize_unknown_letters?
+      found_letters = @min_counts.values.sum
+      guesses < 2 && found_letters < 5
     end
 
     def quiet?
@@ -160,10 +154,11 @@ module Wordle
       @possibilities = {}
 
       word_list = @possible_answers
-      word_list = @possible_answers + @guess_word_list if guesses < full_guess_list_until
 
       word_list.each do |word|
-        next unless eligible?(word)
+        unless maximize_unknown_letters?
+          next unless eligible?(word)
+        end
 
         @possibilities[word] = count_dupes_by_position ? rate_word_by_positional_dupes(word) : rate_word(word)
       end
@@ -186,9 +181,11 @@ module Wordle
 
     def rate_word(word)
       rating = 0
-      word_to_hash(word).each do |index, letter|
+      seen_letters = []
 
+      word_to_hash(word).each do |index, letter|
         rating += @positional_distribution[index.to_s][letter]
+        seen_letters.push(letter)
       end
       rating
     end
@@ -261,6 +258,22 @@ module Wordle
       @max_counts.each do |letter, count|
         return true if word.count(letter) > count
       end
+      false
+    end
+
+    def word_contains_unknown_only(word)
+      word.each_char do |letter|
+        return false if letter_known?(letter)
+        return false if word.count(letter) > 1
+      end
+      true
+    end
+
+    def letter_known?(letter)
+      return true if @found_letters.include?(letter)
+      return true if @max_counts.key?(letter)
+      return true if @min_counts.key?(letter)
+
       false
     end
 
