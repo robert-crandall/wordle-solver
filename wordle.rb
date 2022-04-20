@@ -8,7 +8,9 @@ module Wordle
       @options = opts
       dir = File.dirname(__FILE__)
       @possible_answers = File.read(File.join(dir, 'possible_answers.txt')).split
-      @guess_word_list = File.read(File.join(dir, 'guess_word_list.txt')).split
+      @guess_word_list = File.read(File.join(dir, 'possible_answers.txt')).split
+      @guess_word_list.concat(File.read(File.join(dir, 'guess_word_list.txt')).split)
+      @guess_word_list.uniq!
       @guesses = 0
       @found = false
       create_word_arrays
@@ -160,6 +162,8 @@ module Wordle
         word_to_hash(word).each do |index, letter|
           next if @found_letters[index] # Don't count letters at known positions
           next if @max_counts.key?(letter)
+          next if @min_counts.key?(letter) # This will cause this hash to be empty if all letters have been found
+
           possible_letters[letter] += 1
         end
       end
@@ -178,7 +182,7 @@ module Wordle
       when 0..2
         word_list = @possible_answers
         word_list.each do |word|
-          @possibilities[word] = rate_word(word)
+          @possibilities[word] = rate_word_positional(word)
         end
       when 3..4
         if @possible_answers.length == 1
@@ -188,16 +192,28 @@ module Wordle
         end
         # Find a word that matches the most letters
         @distribution = possible_letters
-        needed_letters = @distribution.select { |_letter, count| count > 1 }
+        needed_letters = @distribution.select { |_letter, count| count > 0 }
+        if debug?
+          puts "trying to rule out: #{needed_letters.to_s}"
+        end
 
-        puts "trying to rule out: #{needed_letters.to_s}"
+        # All letters are found. Just try out remaining words.
+        if needed_letters.empty?
+          word_list = @possible_answers
+          word_list.each do |word|
+            @possibilities[word] = rate_word_nonpositional(word)
+          end
+          return
+        end
+
+        # Try to rule out remaining letters. Use full word list for this.
         word_list = @guess_word_list
         word_list.each do |word|
           @possibilities[word] = rate_word_for_uniquness(word)
         end
       else
         word_list.each do |word|
-          @possibilities[word] = rate_word(word)
+          @possibilities[word] = rate_word_nonpositional(word)
         end
       end
 
@@ -226,7 +242,7 @@ module Wordle
       rating
     end
 
-    def rate_word(word)
+    def rate_word_nonpositional(word)
       rating = 0
       seen_letters = []
 
