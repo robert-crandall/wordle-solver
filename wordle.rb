@@ -23,12 +23,26 @@ module Wordle
       @current_guess
     end
 
+    def top_ten_words
+      rate_words
+      @possibilities.sort_by { |k, v| -v }.first(10).to_h.keys
+
+    end
+
     def found?
       @found
     end
 
+    def possible_answers
+      @possible_answers
+    end
+
     def guesses
       @guesses
+    end
+
+    def guess(word)
+      @current_guess = word
     end
 
     def parse_answer(answer)
@@ -65,19 +79,20 @@ module Wordle
         when 'n'
           @max_counts[letter] = green_letters.count(letter) + yellow_letters.count(letter)
         when 'm'
-          @min_counts[letter] = green_letters.count(letter) + yellow_letters.count(letter)
+          @min_counts[letter] = [@min_counts[letter] ? @min_counts[letter] : 0, green_letters.count(letter) + yellow_letters.count(letter)].max
         when 'y'
-          @min_counts[letter] = green_letters.count(letter) + yellow_letters.count(letter)
+          @min_counts[letter] = [@min_counts[letter] ? @min_counts[letter] : 0, green_letters.count(letter) + yellow_letters.count(letter)].max
         end
       end
 
       # Keep possible answers clean
-
       @possible_answers.each do |word|
         unless eligible?(word)
           @possible_answers -= [word]
         end
       end
+
+      hidden_known_letters if find_hidden_letters?
 
       return unless debug?
 
@@ -105,6 +120,11 @@ module Wordle
 
     def found_letters_count
       @min_counts.values.sum
+    end
+
+    # This option reduced speed by 10% and didn't improve counts
+    def find_hidden_letters?
+      true
     end
 
     def quiet?
@@ -156,18 +176,51 @@ module Wordle
       true
     end
 
+    # Return a distribution of letters that are still possible
+    # Given the word ?atch, this should return: p m w (for patch, match, watch). h and c (hatch and catch) shouldn't be
+    # returned because those letters were already found
     def possible_letters
       possible_letters = empty_distribution
       @possible_answers.each do |word|
         word_to_hash(word).each do |index, letter|
           next if @found_letters[index] # Don't count letters at known positions
-          next if @max_counts.key?(letter)
+          next if @max_counts.key?(letter) # Don't count letters that are already at max value
           next if @min_counts.key?(letter) # This will cause this hash to be empty if all letters have been found
 
           possible_letters[letter] += 1
         end
       end
       possible_letters
+    end
+
+    # Look through remaining words and see if there are any letters that exist for every word
+    # Given hatch and talen, it should find that A needs to be in second position
+    def hidden_known_letters
+      return if @possible_answers.length == 1
+
+      first_word = @possible_answers[0]
+      letter_hash = word_to_hash(first_word)
+
+      # Only look at unknown letters
+      (0..4).each do |i|
+        letter_hash.delete(i) if @found_letters[i]
+      end
+
+      # Loop through remaining words
+      @possible_answers.each do |word|
+        break if letter_hash.empty?
+
+        letter_hash.each do |i, value|
+          letter_hash.delete(i) if word[i] != value
+        end
+      end
+
+      # Found some - add them to known letters!
+      unless letter_hash.empty?
+        letter_hash.each do |i, value|
+          @found_letters[i] = value
+        end
+      end
     end
 
     # Look over possible guesses, and rates them according to the given distribution
@@ -227,6 +280,7 @@ module Wordle
         next if @maybe_letters[index].include?(letter)
         next if @max_counts.key?(letter)
         next if seen_letters.include?(letter)
+
         rating += @distribution[letter]
         seen_letters.push(letter)
       end
@@ -249,6 +303,7 @@ module Wordle
       word_to_hash(word).each do |index, letter|
         # rating += @positional_distribution[index.to_s][letter]
         next if seen_letters.include?(letter)
+
         rating += @distribution[letter]
         seen_letters.push(letter)
       end
@@ -297,6 +352,15 @@ module Wordle
         positional_distribution_by_letter(word)
         distribution_by_letter(word)
       end
+    end
+
+    # Create a filename safe string representation of the found_letters array
+    def found_letters_filename
+      pattern_string = ''
+      @found_letters.each do |this_pattern|
+        pattern_string << this_pattern.match?('[a-z]') ? this_pattern : '?'
+      end
+      pattern_string
     end
 
     # Holds letters and counts of those letters
