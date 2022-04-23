@@ -19,6 +19,10 @@ module Wordle
     def top_rated_word
       rate_words
       @guesses += 1
+      if @guesses > 15
+        puts "You broke something!"
+        exit!
+      end
       @current_guess = (@possibilities.min_by { |k, v| -v })[0]
       @current_guess
     end
@@ -85,6 +89,7 @@ module Wordle
         end
       end
 
+      create_regex_pattern
       # Keep possible answers clean
       @possible_answers.each do |word|
         unless eligible?(word)
@@ -96,7 +101,7 @@ module Wordle
 
       return unless debug?
 
-      puts "Pattern: #{create_regex_pattern}"
+      puts "Pattern: #{@regex_pattern}"
       puts "Max Counts: #{@max_counts}"
       puts "Min Counts: #{@min_counts}"
     end
@@ -163,13 +168,34 @@ module Wordle
       (0..MAX_LENGTH - 1).each do |index|
         regex_pattern << regex_for_index(index)
       end
-      regex_pattern
+      @regex_pattern = regex_pattern
+    end
+
+    def new_create_regex_pattern
+      regex_pattern = '(?='
+      (0..MAX_LENGTH - 1).each do |index|
+        regex_pattern << regex_for_index(index)
+      end
+      regex_pattern << ')'
+
+      @max_counts.each do |letter, count|
+        if count.zero?
+          regex_pattern << "(?!.*#{letter}.*)"
+        else
+          (0..count).each do
+            regex_pattern << "(?=.*#{letter}.*)"
+          end
+        end
+      end
+      if @guesses > 6
+        puts "Current regex is #{regex_pattern}"
+      end
+      @regex_pattern = regex_pattern
     end
 
     def eligible?(word)
-      regex_pattern = create_regex_pattern
 
-      return false unless word.match?(regex_pattern)
+      return false unless word.match?(@regex_pattern)
       return false if contains_excluded?(word)
       return false unless contains_included?(word)
 
@@ -225,6 +251,7 @@ module Wordle
 
     # Look over possible guesses, and rates them according to the given distribution
     def rate_words
+      create_regex_pattern
       create_distribution
 
       @possibilities = {}

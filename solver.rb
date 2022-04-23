@@ -10,6 +10,8 @@ def interactive_mode
   until @wordle.found?
     puts "Possibilities: #{@wordle.possible_answers.length}"
     puts "Try one of these words:"
+    # puts "(Hint: first letter of top word is #{@wordle.top_ten_words[0][0]}#{@wordle.top_ten_words[0][1]})"
+
     puts @wordle.top_ten_words
     puts
     puts "Which word did you select?"

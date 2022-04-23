@@ -124,7 +124,6 @@ if File.exist?(baseline_filename) && test_name != 'baseline'
 end
 
 
-
 File.open(filename,'w') do |f|
   f.write(JSON.pretty_generate(results))
 end
