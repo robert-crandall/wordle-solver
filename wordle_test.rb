@@ -5,7 +5,7 @@ module TestWordle
   describe Wordle do
     describe 'when asked for a top word' do
       it 'responds with a word' do
-        wordle = Wordle::Wordle.new()
+        wordle = Wordle.new()
         assert wordle.top_rated_word.length == 5
       end
     end
@@ -16,7 +16,7 @@ module TestWordle
         min_counts = {'o' => 1, 'e' => 1, 'y' => 1}
         found_letters = [nil, 'o', nil, 'e', nil]
 
-        wordle = Wordle::Wordle.new({
+        wordle = Wordle.new({
                                       "debug": true,
                                       "max_counts": max_counts,
                                       "min_counts": min_counts,

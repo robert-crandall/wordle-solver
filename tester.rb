@@ -1,4 +1,6 @@
 require_relative './wordle.rb'
+require_relative './server.rb'
+
 require 'getoptlong'
 
 possible_answers = File.read('possible_answers.txt').split
@@ -64,8 +66,8 @@ def count_answer_tries(answer)
   }
   options[:debug] = true if @debug
 
-  wordle = Wordle::Wordle.new(options)
-  server = Wordle::Server.new(answer)
+  wordle = Wordle.new(options)
+  server = Server.new(answer)
   puts "Looking for #{server.answer}" if @debug
   i = 0
 
