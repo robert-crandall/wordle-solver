@@ -2,6 +2,7 @@ require_relative './wordle.rb'
 require_relative './server.rb'
 
 require 'getoptlong'
+require 'json'
 
 possible_answers = File.read('possible_answers.txt').split
 
