@@ -3,7 +3,7 @@ require_relative 'word_matcher'
 # rubocop:disable ClassLength
 class Wordle
   MAX_LENGTH = 5
-  attr_reader :guesses
+  attr_reader :guesses, :possible_answers
 
   def initialize(opts = {})
     @options = opts
@@ -34,10 +34,6 @@ class Wordle
     @broke
   end
 
-  def possible_answers
-    @possible_answers
-  end
-
   def guess(word)
     @current_guess = word
   end
@@ -55,41 +51,11 @@ class Wordle
       @found = true
     end
 
-    green_letters = []
-    yellow_letters = []
-
     # parse over first time to create counts of found letters
-    (0..4).each do |i|
-      letter = @current_guess[i]
-      case answer[i]
-      when 'y'
-        word_matcher.set_found_letter(letter, i)
-        green_letters.push(letter)
-      when 'm'
-        word_matcher.set_maybe_letter(letter, i)
-        yellow_letters.push(letter)
-      end
-    end
+    parse_found_letters(answer)
 
     # parse again in order to handle N letters
-    # rubocop:disable Style/CombinableLoops
-    (0..4).each do |i|
-      letter = @current_guess[i]
-      count = green_letters.count(letter) + yellow_letters.count(letter)
-
-      case answer[i]
-      when 'n'
-        if count.zero?
-          word_matcher.set_excluded_letter(letter)
-        else
-          word_matcher.set_max_letter_count(letter, count)
-        end
-      when 'm'
-        word_matcher.set_min_letter_count(letter, green_letters.count(letter) + yellow_letters.count(letter))
-      when 'y'
-        word_matcher.set_min_letter_count(letter, green_letters.count(letter) + yellow_letters.count(letter))
-      end
-    end
+    parse_letter_counts(answer)
 
     word_matcher.refresh_regex_pattern
 
@@ -103,14 +69,38 @@ class Wordle
 
     return unless debug?
 
-    puts "Pattern: #{word_matcher.regex_pattern}"
-    puts "Letter Counts: #{word_matcher.letter_counts}"
+    # puts "Pattern: #{word_matcher.regex_pattern}"
+    # puts "Letter Counts: #{word_matcher.letter_counts}"
   end
 
   private
 
   def word_matcher
     @word_matcher ||= WordMatch.new(@options)
+  end
+
+  # Use positional distributions and word scoring.
+  # If true, the letter order matters. Will favor s in the first letter, for example
+  # If false, letter order does not matter. Will only favor most used letters.
+  def positional_ratings?
+    return true if @needed_letters.nil?
+    return false if @needed_letters.empty?
+
+    !finding_unique_letters?
+  end
+
+  # If the goal is to find unique letters
+  # This is set when trying to distinguish between hatch, match, and catch
+  def finding_unique_letters?
+    return false if @needed_letters.nil?
+    return false if @needed_letters.empty?
+    return true if word_matcher.found_letters_count >= hunt_letters
+
+    false
+  end
+
+  def word_list
+    finding_unique_letters? ? @guess_word_list : @possible_answers
   end
 
   # When looking at word list possibilities, exclude words that are ineligible
@@ -121,17 +111,30 @@ class Wordle
     true
   end
 
-  # Prefer rating unknown letters in order to maximize guessing
-  # 2 - small goes 4 to 1; full goes 14 to 11
-  # 3 - full goes 14 to 15
-  def maximize_unknown_letters?
-    guesses < 2 && found_letters_count < 5
+  # Which letters are still unknown?
+  def needed_letters
+    if @positional_ratings
+      flatten_positional.select { |_letter, count| count > 0 }
+    else
+      @distribution.select { |_letter, count| count > 0 }
+    end
+  end
+
+  # Converts a positional distribution to a flat distribution
+  def flatten_positional
+    flat_distribution = empty_distribution
+    (0..MAX_LENGTH-1).each do |i|
+      @distribution[i.to_s].each do |letter, count|
+        flat_distribution[letter] += count
+      end
+    end
+    flat_distribution
   end
 
   # Did something break? If so, print some debug information
   def check_breakage
     if @guesses > 8
-      puts "Something broke. Sorry bro."
+      puts 'Something broke. Sorry bro.'
       puts "  Regex: #{@regex_pattern}"
       @broke = true
     end
@@ -139,7 +142,7 @@ class Wordle
 
   # This option reduced speed by 10% and didn't improve counts
   def find_hidden_letters?
-    true
+    false
   end
 
   def quiet?
@@ -150,18 +153,24 @@ class Wordle
     @options.key?(:debug) || @guesses > 6
   end
 
+  # Switch to hunting unique letters at this many found letters
+  def hunt_letters
+    @options.key?(:hunt_letters) || 3
+  end
 
   # Return a distribution of letters that are still possible
   # Given the word ?atch, this should return: p m w (for patch, match, watch). h and c (hatch and catch) shouldn't be
   # returned because those letters were already found
   def possible_letters
-    puts "Going into LETTER HUNTER MODE!" if debug?
+    puts 'Going into LETTER HUNTER MODE!' if debug?
     possible_letters = empty_distribution
     @possible_answers.each do |word|
       word_to_hash(word).each do |index, letter|
-        next if word_matcher.found_letters[index] # Don't count letters at known positions
-        next unless word_matcher.letter_counts[letter][:max].nil? # Don't count letters that are already at max value
-        next unless word_matcher.letter_counts[letter][:min].nil? # This will cause this hash to be empty if all letters have been found
+        next if word_matcher.found_letters[index]
+        next unless word_matcher.letter_counts[letter][:max].nil?
+
+        # This will return an empty result when all letters are known, but a repeat letter needs to be found
+        next unless word_matcher.letter_counts[letter][:min].nil?
 
         possible_letters[letter] += 1
       end
@@ -169,8 +178,46 @@ class Wordle
     possible_letters
   end
 
+  # Perform actions on the Y and M letters in a guess
+  def parse_found_letters(answer)
+    @green_letters = []
+    @yellow_letters = []
+    (0..4).each do |i|
+      letter = @current_guess[i]
+      case answer[i]
+      when 'y'
+        word_matcher.set_found_letter(letter, i)
+        @green_letters.push(letter)
+      when 'm'
+        word_matcher.set_maybe_letter(letter, i)
+        @yellow_letters.push(letter)
+      end
+    end
+  end
+
+  # Calculate how many of each letter are possible in the word
+  def parse_letter_counts(answer)
+    (0..4).each do |i|
+      letter = @current_guess[i]
+      count = @green_letters.count(letter) + @yellow_letters.count(letter)
+
+      case answer[i]
+      when 'n'
+        if count.zero?
+          word_matcher.set_excluded_letter(letter)
+        else
+          word_matcher.set_max_letter_count(letter, count)
+        end
+      when 'm'
+        word_matcher.set_min_letter_count(letter, count)
+      when 'y'
+        word_matcher.set_min_letter_count(letter, count)
+      end
+    end
+  end
+
   # Look through remaining words and see if there are any letters that exist for every word
-  # Given hatch and talen, it should find that A needs to be in second position
+  # Given hatch and cards, it should find that A needs to be in second position
   def hidden_known_letters
     return if @possible_answers.length == 1
 
@@ -191,127 +238,77 @@ class Wordle
       end
     end
 
+    return if letter_hash.empty?
+
     # Found some - add them to known letters!
-    unless letter_hash.empty?
-      letter_hash.each do |i, letter|
-        word_matcher.set_found_letter(letter, i)
-      end
+    letter_hash.each do |i, letter|
+      word_matcher.set_found_letter(letter, i)
     end
   end
 
   # Look over possible guesses, and rates them according to the given distribution
   def rate_words
     word_matcher.refresh_regex_pattern
+    word_matcher.refresh_found_letters_count
+    @positional_ratings = positional_ratings?
+
     create_distribution
 
     @possibilities = {}
 
-    word_list = @possible_answers
-
-    case word_matcher.found_letters_count
-    when 0..2
-      word_list = @possible_answers
-      word_list.each do |word|
-        @possibilities[word] = rate_word_positional(word)
-      end
-    when 3..4
-      if @possible_answers.length == 1
-        word = @possible_answers[0]
-        @possibilities[word] = 100
-        return
-      end
-      # Find a word that matches the most letters
-      @distribution = possible_letters
-      needed_letters = @distribution.select { |_letter, count| count > 0 }
-      if debug?
-        puts "trying to rule out: #{needed_letters.to_s}"
-      end
-
-      # All letters are found. Just try out remaining words.
-      if needed_letters.empty?
-        puts "Needed letters is empty. Trying out remaining words." if debug?
-        word_list = @possible_answers
-        word_list.each do |word|
-          @possibilities[word] = rate_word_nonpositional(word)
-        end
-        return
-      end
-
-      # Try to rule out remaining letters. Use full word list for this.
-      word_list = @guess_word_list
-      word_list.each do |word|
-        @possibilities[word] = rate_word_for_uniquness(word)
-      end
-    else
-      word_list.each do |word|
-        @possibilities[word] = rate_word_nonpositional(word)
-      end
+    if @possible_answers.length == 1
+      @possibilities[@possible_answers[0]] = 100
+      return
     end
 
+    @needed_letters = needed_letters
+    guess_words = word_list
+
+    # All letters are found. Just try out remaining words.
+    if @needed_letters.empty?
+      puts 'Needed letters is empty. Trying out remaining words.' if debug?
+      guess_words.each do |word|
+        @possibilities[word] = rate_word(word)
+      end
+      return
+    end
+
+    # Try to rule out remaining letters
+    word_list.each do |word|
+      @possibilities[word] = rate_word(word)
+    end
   end
 
-  def rate_word_for_uniquness(word)
+  def rate_word(word)
     rating = 0
     seen_letters = []
 
     word_to_hash(word).each do |index, letter|
-      next if word_matcher.maybe_letters[index].include?(letter)
-      next unless word_matcher.letter_counts[letter][:max].nil?
-      next if seen_letters.include?(letter)
-
-      rating += @distribution[letter]
-      seen_letters.push(letter)
-    end
-    rating
-  end
-
-  def rate_word_positional(word)
-    rating = 0
-
-    word_to_hash(word).each do |index, letter|
-      rating += @positional_distribution[index.to_s][letter]
-    end
-    rating
-  end
-
-  def rate_word_nonpositional(word)
-    rating = 0
-    seen_letters = []
-
-    word_to_hash(word).each do |index, letter|
-      # rating += @positional_distribution[index.to_s][letter]
-      next if seen_letters.include?(letter)
-
-      rating += @distribution[letter]
-      seen_letters.push(letter)
-    end
-    rating
-  end
-
-  def distribution_by_positional_duplicates(word)
-    char_occurance = {}
-    word_to_hash(word).each do |index, letter|
-      if char_occurance.key?(letter)
-        char_occurance[letter] += 1
-      else
-        char_occurance[letter] = 0
+      # If finding unique letters, skip any letter that's known
+      if finding_unique_letters?
+        next if word_matcher.maybe_letters[index].include?(letter)
+        next unless word_matcher.letter_counts[letter][:max].nil?
+        next if seen_letters.include?(letter)
       end
-      occurance = char_occurance[letter]
-      @positional_distribution[index.to_s][letter][occurance] += 1
-    end
-  end
 
-  def positional_distribution_by_letter(word)
-    word_to_hash(word).each do |index, letter|
-      @positional_distribution[index.to_s][letter] += 1
+      # If not using positional ratings, don't count duplicate letters
+      next if seen_letters.include?(letter) && !@positional_ratings
+
+      rating += @positional_ratings ? @distribution[index.to_s][letter] : @distribution[letter]
+      seen_letters.push(letter)
     end
+    rating
   end
 
   def distribution_by_letter(word)
     word_to_hash(word).each do |index, letter|
-      next if word_matcher.found_letters[index]
+      if @positional_ratings
+        @distribution[index.to_s][letter] += 1
+      else
+        next if word_matcher.found_letters[index]
 
-      @distribution[letter] += 1
+        @distribution[letter] += 1
+      end
     end
   end
 
@@ -319,15 +316,18 @@ class Wordle
   # IE, given words cat and cow:
   # c is 2 likely to be at position 0
   def create_distribution
-    @positional_distribution = empty_positional_distribution
-    @distribution = empty_distribution
+    if finding_unique_letters?
+      @distribution = possible_letters
+      return
+    end
+
+    @distribution = @positional_ratings ? empty_positional_distribution : empty_distribution
 
     word_list = @possible_answers
 
     word_list.each do |word|
       next if limit_distribution_to_eligible_words && word_matcher.word_disqualified?(word)
 
-      positional_distribution_by_letter(word)
       distribution_by_letter(word)
     end
   end

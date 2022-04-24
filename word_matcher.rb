@@ -1,6 +1,6 @@
 class WordMatch
 
-  attr_reader :letter_counts, :regex_pattern, :found_letters, :maybe_letters
+  attr_reader :letter_counts, :regex_pattern, :found_letters, :maybe_letters, :found_letters_count
 
   def initialize(opts = {})
     @options = opts
@@ -58,8 +58,8 @@ class WordMatch
   end
 
   # How many letters, regardless of position, are found?
-  def found_letters_count
-    (@letter_counts.reject { |_letter, count_hash| count_hash[:min].nil? }).count
+  def refresh_found_letters_count
+    @found_letters_count = (@letter_counts.reject { |_letter, count_hash| count_hash[:min].nil? }).count
   end
 
   private
