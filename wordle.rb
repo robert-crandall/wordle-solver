@@ -1,6 +1,7 @@
 require 'json'
 
 module Wordle
+  # rubocop:disable ClassLength
   class Wordle
     MAX_LENGTH = 5
 
@@ -13,16 +14,14 @@ module Wordle
       @guess_word_list.uniq!
       @guesses = 0
       @found = false
+      @broke = false
       create_word_arrays
     end
 
     def top_rated_word
       rate_words
       @guesses += 1
-      if @guesses > 15
-        puts "You broke something!"
-        exit!
-      end
+      check_breakage
       @current_guess = (@possibilities.min_by { |k, v| -v })[0]
       @current_guess
     end
@@ -34,7 +33,11 @@ module Wordle
     end
 
     def found?
-      @found
+      @found || @broke
+    end
+
+    def broke?
+      @broke
     end
 
     def possible_answers
@@ -49,6 +52,14 @@ module Wordle
       @current_guess = word
     end
 
+    # Sets the minimum count for a letter
+    # Check if the value has already been set. If so, select the max value
+    # of previous versus massed in count
+    def set_min_letter_count(letter, count)
+      @letter_counts[letter][:min] = [@letter_counts[letter][:min] ? @letter_counts[letter][:min] : 0, count].max
+    end
+
+    # rubocop:disable MethodLength, Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
     def parse_answer(answer)
       answer = answer.downcase
       if answer == 'xxxxx'
@@ -77,24 +88,27 @@ module Wordle
       end
 
       # parse again in order to handle N letters
+      # rubocop:disable Style/CombinableLoops
       (0..4).each do |i|
         letter = @current_guess[i]
         case answer[i]
         when 'n'
-          @max_counts[letter] = green_letters.count(letter) + yellow_letters.count(letter)
+          if (green_letters.count(letter) + yellow_letters.count(letter)).zero?
+            @excluded_letters.push(@current_guess[i])
+          else
+            @letter_counts[letter][:max] = green_letters.count(letter) + yellow_letters.count(letter)
+          end
         when 'm'
-          @min_counts[letter] = [@min_counts[letter] ? @min_counts[letter] : 0, green_letters.count(letter) + yellow_letters.count(letter)].max
+          set_min_letter_count(letter, green_letters.count(letter) + yellow_letters.count(letter))
         when 'y'
-          @min_counts[letter] = [@min_counts[letter] ? @min_counts[letter] : 0, green_letters.count(letter) + yellow_letters.count(letter)].max
+          set_min_letter_count(letter, green_letters.count(letter) + yellow_letters.count(letter))
         end
       end
 
       create_regex_pattern
       # Keep possible answers clean
       @possible_answers.each do |word|
-        unless eligible?(word)
-          @possible_answers -= [word]
-        end
+        @possible_answers -= [word] unless eligible?(word)
       end
 
       hidden_known_letters if find_hidden_letters?
@@ -123,8 +137,18 @@ module Wordle
       guesses < 2 && found_letters_count < 5
     end
 
+    # Did something break? If so, print some debug information
+    def check_breakage
+      if @guesses > 8
+        puts "Something broke. Sorry bro."
+        puts "  Regex: #{@regex_pattern}"
+        @broke = true
+      end
+    end
+
+    # How many letters, regardless of position, are found?
     def found_letters_count
-      @min_counts.values.sum
+      (@letter_counts.reject { |_letter, count_hash| count_hash[:min].nil? }).count
     end
 
     # This option reduced speed by 10% and didn't improve counts
@@ -137,7 +161,7 @@ module Wordle
     end
 
     def debug?
-      @options.key?(:debug)
+      @options.key?(:debug) || @guesses > 6
     end
 
     def manual_debug?
@@ -149,6 +173,12 @@ module Wordle
 
       @min_counts = @options.key?(:min_counts) ? @options[:min_counts] : {}
       @found_letters = @options.key?(:found_letters) ? @options[:found_letters] : [nil, nil, nil, nil, nil]
+      @excluded_letters = @options.key?(:excluded_letters) ? @options[:excluded_letters] : []
+
+      @letter_counts = {}
+      ('a'..'z').each do |letter|
+        @letter_counts[letter] = { 'min': nil, 'max': nil }
+      end
 
       @maybe_letters = [[], [], [], [], []]
     end
@@ -157,7 +187,9 @@ module Wordle
       if @found_letters[index]
         @found_letters[index]
       elsif !@maybe_letters[index].empty?
-        "[^#{@maybe_letters[index].join('')}]"
+        "[^#{@maybe_letters[index].join('')}#{@excluded_letters.join('')}]"
+      elsif !@excluded_letters.empty?
+        "[^#{@excluded_letters.join('')}]"
       else
         '[a-z]'
       end
@@ -171,32 +203,38 @@ module Wordle
       @regex_pattern = regex_pattern
     end
 
-    def new_create_regex_pattern
-      regex_pattern = '(?='
+    def fancy_create_regex_pattern
+      regex_pattern = '^(?='
       (0..MAX_LENGTH - 1).each do |index|
         regex_pattern << regex_for_index(index)
       end
       regex_pattern << ')'
 
-      @max_counts.each do |letter, count|
-        if count.zero?
-          regex_pattern << "(?!.*#{letter}.*)"
-        else
-          (0..count).each do
-            regex_pattern << "(?=.*#{letter}.*)"
-          end
-        end
+      @letter_counts.each do |letter, letter_counts|
+
+        found_min = !letter_counts[:min].nil?
+        found_max = !letter_counts[:max].nil?
+
+        next unless found_min || found_max
+
+        letter_count = found_max ? letter_counts[:max] : letter_counts[:min]
+
+        # If a min count, regex should be (?=.*p.*p.*) given two p
+        # If a max count, regex should be (?=[^r]*r[^r]*r[^r]*) given two r
+        count_regex = "[^#{letter}]*(#{letter}[^#{letter}]*){#{letter_count}}"
+
+        puts "Count regex 2 for letter #{letter}: #{count_regex}"
+
+
+        regex_pattern << "(?=#{count_regex})"
       end
-      if @guesses > 6
-        puts "Current regex is #{regex_pattern}"
-      end
+      regex_pattern << "[a-z]{5}$"
+      puts regex_pattern
       @regex_pattern = regex_pattern
     end
 
     def eligible?(word)
-
       return false unless word.match?(@regex_pattern)
-      return false if contains_excluded?(word)
       return false unless contains_included?(word)
 
       true
@@ -206,12 +244,13 @@ module Wordle
     # Given the word ?atch, this should return: p m w (for patch, match, watch). h and c (hatch and catch) shouldn't be
     # returned because those letters were already found
     def possible_letters
+      puts "Going into HUNTER MODE!" if debug?
       possible_letters = empty_distribution
       @possible_answers.each do |word|
         word_to_hash(word).each do |index, letter|
           next if @found_letters[index] # Don't count letters at known positions
-          next if @max_counts.key?(letter) # Don't count letters that are already at max value
-          next if @min_counts.key?(letter) # This will cause this hash to be empty if all letters have been found
+          next unless @letter_counts[letter][:max].nil? # Don't count letters that are already at max value
+          next unless @letter_counts[letter][:min].nil? # This will cause this hash to be empty if all letters have been found
 
           possible_letters[letter] += 1
         end
@@ -279,6 +318,7 @@ module Wordle
 
         # All letters are found. Just try out remaining words.
         if needed_letters.empty?
+          puts "Needed letters is empty. Trying out remaining words." if debug?
           word_list = @possible_answers
           word_list.each do |word|
             @possibilities[word] = rate_word_nonpositional(word)
@@ -305,7 +345,7 @@ module Wordle
 
       word_to_hash(word).each do |index, letter|
         next if @maybe_letters[index].include?(letter)
-        next if @max_counts.key?(letter)
+        next unless @letter_counts[letter][:max].nil?
         next if seen_letters.include?(letter)
 
         rating += @distribution[letter]
@@ -332,6 +372,7 @@ module Wordle
         next if seen_letters.include?(letter)
 
         rating += @distribution[letter]
+        puts "#{letter} got #{@distribution[letter]}" if debug?
         seen_letters.push(letter)
       end
       rating
@@ -437,17 +478,24 @@ module Wordle
 
     def letter_known?(letter)
       return true if @found_letters.include?(letter)
-      return true if @max_counts.key?(letter)
-      return true if @min_counts.key?(letter)
+      return true unless @letter_counts[letter][:max].nil? # TODO - does this make sense?
+      return true unless @letter_counts[letter][:min].nil?
 
       false
     end
 
     # Does the given word include all the included letters?
     def contains_included?(word)
-      @min_counts.each do |letter, count|
-        return false if word.count(letter) < count
-        # return false unless word.include?(letter)
+      @letter_counts.each do |letter, letter_counts|
+
+        found_min = !letter_counts[:min].nil?
+        found_max = !letter_counts[:max].nil?
+
+        if found_max
+          return false unless word.count(letter) == letter_counts[:max]
+        elsif found_min
+          return false if word.count(letter) < letter_counts[:min]
+        end
       end
       true
     end
