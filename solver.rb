@@ -6,7 +6,7 @@ opts = GetoptLong.new(
 )
 
 def interactive_mode
-  @wordle = Wordle::Wordle.new()
+  @wordle = Wordle.new()
   until @wordle.found?
     puts "Possibilities: #{@wordle.possible_answers.length}"
     puts "Try one of these words:"
@@ -29,12 +29,17 @@ opts.each do |opt, arg|
   end
 end
 
-
-@wordle = Wordle::Wordle.new()
+options = {
+  "quiet": true
+}
+@wordle = Wordle.new(options)
 until @wordle.found?
   current_guess = @wordle.top_rated_word
 
   puts "Possibilities: #{@wordle.possible_answers.length}"
+  if @wordle.finding_letters?
+    puts "Remaining words: #{@wordle.possible_answers}"
+  end
   puts "Try the word `#{current_guess}`"
   puts "How'd it do? (Y for yes, N for no, M for Maybe, xxxxx for not a word)"
   @wordle.parse_answer(gets.chomp)

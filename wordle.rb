@@ -38,6 +38,10 @@ class Wordle
     @current_guess = word
   end
 
+  def finding_letters?
+    finding_unique_letters?
+  end
+
   # rubocop:disable MethodLength, Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
   def parse_answer(answer)
     answer = answer.downcase
@@ -158,6 +162,11 @@ class Wordle
     @options.key?(:hunt_letters) || 3
   end
 
+  # Switch to random guessing when this many words remain
+  def guess_when_words_remain
+    @options.key?(:guess_count) || 2
+  end
+
   # Return a distribution of letters that are still possible
   # Given the word ?atch, this should return: p m w (for patch, match, watch). h and c (hatch and catch) shouldn't be
   # returned because those letters were already found
@@ -175,6 +184,7 @@ class Wordle
         possible_letters[letter] += 1
       end
     end
+    puts "Need to rule out: #{possible_letters.select { |_letter, count| count > 0 }}" if debug?
     possible_letters
   end
 
@@ -256,8 +266,11 @@ class Wordle
 
     @possibilities = {}
 
-    if @possible_answers.length == 1
-      @possibilities[@possible_answers[0]] = 100
+    # Return early because there's random chance at this point
+    if @possible_answers.length <= guess_when_words_remain
+      @possible_answers.each do |word|
+        @possibilities[word] = rate_word(word)
+      end
       return
     end
 
