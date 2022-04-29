@@ -104,6 +104,8 @@ class Wordle
   end
 
   def word_list
+    return @possible_answers if @possible_answers.length <= guess_when_words_remain
+
     finding_unique_letters? ? @guess_word_list : @possible_answers
   end
 
@@ -266,25 +268,7 @@ class Wordle
 
     @possibilities = {}
 
-    # Return early because there's random chance at this point
-    if @possible_answers.length <= guess_when_words_remain
-      @possible_answers.each do |word|
-        @possibilities[word] = rate_word(word)
-      end
-      return
-    end
-
     @needed_letters = needed_letters
-    guess_words = word_list
-
-    # All letters are found. Just try out remaining words.
-    if @needed_letters.empty?
-      puts 'Needed letters is empty. Trying out remaining words.' if debug?
-      guess_words.each do |word|
-        @possibilities[word] = rate_word(word)
-      end
-      return
-    end
 
     # Try to rule out remaining letters
     word_list.each do |word|
@@ -336,9 +320,7 @@ class Wordle
 
     @distribution = @positional_ratings ? empty_positional_distribution : empty_distribution
 
-    word_list = @possible_answers
-
-    word_list.each do |word|
+    @possible_answers.each do |word|
       next if limit_distribution_to_eligible_words && word_matcher.word_disqualified?(word)
 
       distribution_by_letter(word)
