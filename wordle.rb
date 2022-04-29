@@ -17,13 +17,12 @@ class Wordle
     rate_words
     @guesses += 1
     check_breakage
-    @current_guess = (@possibilities.min_by { |k, v| -v })[0]
-    @current_guess
+    @current_guess = (@possibilities.min_by { |_, v| -v })[0]
   end
 
   def top_ten_words
     rate_words
-    @possibilities.sort_by { |k, v| -v }.first(10).to_h.keys
+    @possibilities.sort_by { |_, v| -v }.first(10).to_h.keys
   end
 
   def found?
@@ -68,12 +67,11 @@ class Wordle
       @possible_answers -= [word] unless word_matcher.word_eligible?(word)
     end
 
-
     hidden_known_letters if find_hidden_letters?
 
     return unless debug?
 
-    # puts "Pattern: #{word_matcher.regex_pattern}"
+    puts "Pattern: #{word_matcher.regex_pattern}"
     # puts "Letter Counts: #{word_matcher.letter_counts}"
   end
 
@@ -104,9 +102,9 @@ class Wordle
   end
 
   def word_list
-    return @possible_answers if @possible_answers.length <= guess_when_words_remain
+    return @guess_word_list if finding_unique_letters? && @possible_answers.length > guess_when_words_remain
 
-    finding_unique_letters? ? @guess_word_list : @possible_answers
+    @possible_answers
   end
 
   # When looking at word list possibilities, exclude words that are ineligible
@@ -120,16 +118,16 @@ class Wordle
   # Which letters are still unknown?
   def needed_letters
     if @positional_ratings
-      flatten_positional.select { |_letter, count| count > 0 }
+      flatten_positional.select { |_letter, count| count.positive? }
     else
-      @distribution.select { |_letter, count| count > 0 }
+      @distribution.select { |_letter, count| count.positive? }
     end
   end
 
   # Converts a positional distribution to a flat distribution
   def flatten_positional
     flat_distribution = empty_distribution
-    (0..MAX_LENGTH-1).each do |i|
+    (0..MAX_LENGTH - 1).each do |i|
       @distribution[i.to_s].each do |letter, count|
         flat_distribution[letter] += count
       end
@@ -139,11 +137,11 @@ class Wordle
 
   # Did something break? If so, print some debug information
   def check_breakage
-    if @guesses > 8
-      puts 'Something broke. Sorry bro.'
-      puts "  Regex: #{@regex_pattern}"
-      @broke = true
-    end
+    return unless @guesses > 8
+
+    puts 'Something broke. Sorry bro.'
+    puts "  Regex: #{@regex_pattern}"
+    @broke = true
   end
 
   # This option reduced speed by 10% and didn't improve counts
@@ -152,21 +150,21 @@ class Wordle
   end
 
   def quiet?
-    @options.key?(:quiet)
+    @options[:quiet] || false
   end
 
   def debug?
-    @options.key?(:debug) || @guesses > 6
+    @options[:debug] || @guesses > 6
   end
 
   # Switch to hunting unique letters at this many found letters
   def hunt_letters
-    @options.key?(:hunt_letters) || 3
+    @options[:hunt_letters] || 3
   end
 
   # Switch to random guessing when this many words remain
   def guess_when_words_remain
-    @options.key?(:guess_count) || 2
+    @options[:guess_count] || 2
   end
 
   # Return a distribution of letters that are still possible
@@ -186,7 +184,7 @@ class Wordle
         possible_letters[letter] += 1
       end
     end
-    puts "Need to rule out: #{possible_letters.select { |_letter, count| count > 0 }}" if debug?
+    puts "Need to rule out: #{possible_letters.select { |_letter, count| count.positive? }}" if debug?
     possible_letters
   end
 
@@ -220,9 +218,7 @@ class Wordle
         else
           word_matcher.set_max_letter_count(letter, count)
         end
-      when 'm'
-        word_matcher.set_min_letter_count(letter, count)
-      when 'y'
+      else
         word_matcher.set_min_letter_count(letter, count)
       end
     end
