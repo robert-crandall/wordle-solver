@@ -94,15 +94,15 @@ class Wordle
   # If the goal is to find unique letters
   # This is set when trying to distinguish between hatch, match, and catch
   def finding_unique_letters?
-    return false if @needed_letters.nil?
-    return false if @needed_letters.empty?
+    return false if @needed_letters.nil? || @needed_letters.empty?
+    return false if @possible_answers.length <= guess_when_words_remain
     return true if word_matcher.found_letters_count >= hunt_letters
 
     false
   end
 
   def word_list
-    return @guess_word_list if finding_unique_letters? && @possible_answers.length > guess_when_words_remain
+    return @guess_word_list if finding_unique_letters?
 
     @possible_answers
   end
@@ -277,15 +277,15 @@ class Wordle
     seen_letters = []
 
     word_to_hash(word).each do |index, letter|
+      # If not using positional ratings, don't count duplicate letters
+      next if !@positional_ratings && seen_letters.include?(letter)
+
       # If finding unique letters, skip any letter that's known
       if finding_unique_letters?
         next if word_matcher.maybe_letters[index].include?(letter)
         next unless word_matcher.letter_counts[letter][:max].nil?
         next if seen_letters.include?(letter)
       end
-
-      # If not using positional ratings, don't count duplicate letters
-      next if seen_letters.include?(letter) && !@positional_ratings
 
       rating += @positional_ratings ? @distribution[index.to_s][letter] : @distribution[letter]
       seen_letters.push(letter)
