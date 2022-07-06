@@ -1,6 +1,6 @@
 require_relative 'word_matcher'
 require 'json'
-require "date"
+require 'date'
 
 # rubocop:disable ClassLength
 class Wordle
@@ -24,7 +24,7 @@ class Wordle
 
   def top_ten_words
     rate_words
-    @possibilities.sort_by { |_, v| -v }.first(10).to_h.keys
+    @possibilities.sort_by { |_, v| -v }.first(10).to_h.keys.shuffle
   end
 
   def found?
@@ -36,7 +36,12 @@ class Wordle
   end
 
   def word_date(word)
-    Date.new(2021, 6, 19) + @ordered_word_list.index(word)
+    start_date + @ordered_word_list.index(word)
+  end
+
+  def todays_word
+    index = Date.today - start_date - 1
+    @ordered_word_list[index]
   end
 
   def guess(word)
@@ -356,6 +361,11 @@ class Wordle
       i += 1
     end
     this_hash
+  end
+
+  # Date when wordle started
+  def start_date
+    @start_date ||= Date.new(2021, 6, 19)
   end
 
   def set_word_lists
