@@ -1,4 +1,6 @@
 require_relative 'word_matcher'
+require 'json'
+require "date"
 
 # rubocop:disable ClassLength
 class Wordle
@@ -31,6 +33,10 @@ class Wordle
 
   def broke?
     @broke
+  end
+
+  def word_date(word)
+    Date.new(2021, 6, 19) + @ordered_word_list.index(word)
   end
 
   def guess(word)
@@ -354,6 +360,7 @@ class Wordle
 
   def set_word_lists
     @possible_answers = File.read('possible_answers.txt').split
+    @ordered_word_list = JSON.parse(File.read('ordered_answers.txt'))
     @guess_word_list = File.read('possible_answers.txt').split
     @guess_word_list.concat(File.read('guess_word_list.txt').split)
     @guess_word_list.uniq!

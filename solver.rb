@@ -2,7 +2,8 @@ require_relative './wordle.rb'
 require 'getoptlong'
 
 opts = GetoptLong.new(
-  [ '--interactive', '-i', GetoptLong::NO_ARGUMENT ]
+  [ '--interactive', '-i', GetoptLong::NO_ARGUMENT ],
+  [ '--date', '-d',  GetoptLong::OPTIONAL_ARGUMENT ]
 )
 
 def interactive_mode
@@ -21,10 +22,20 @@ def interactive_mode
   end
 end
 
+def find_word_date
+  @wordle = Wordle.new()
+  puts @wordle.word_date(@test_word)
+  exit!
+end
+
 opts.each do |opt, arg|
   case opt
   when '--interactive'
     interactive_mode
+    exit!
+  when '--date'
+    @test_word = arg
+    find_word_date
     exit!
   end
 end
