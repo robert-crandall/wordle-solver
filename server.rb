@@ -7,6 +7,20 @@ class Server
     @answer
   end
 
+  def score_guess(guess_str)
+    answer = parse_guess(guess_str)
+    score = 0
+    (0..4).each do |i|
+      if answer[i] == 'y'
+        score += 10
+      end
+      if answer[i] == 'm'
+        score += 1
+      end
+    end
+    score
+  end
+
   def parse_guess(guess_str)
     response = %w[n n n n n]
     guess = guess_str.split('')

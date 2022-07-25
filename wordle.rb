@@ -1,6 +1,8 @@
 require_relative 'word_matcher'
 require 'json'
 require 'date'
+require 'tzinfo'
+require 'pry'
 
 # rubocop:disable ClassLength
 class Wordle
@@ -12,6 +14,7 @@ class Wordle
     @guesses = 0
     @found = false
     @broke = false
+    @zone = TZInfo::Timezone.get('America/Los_Angeles')
     set_word_lists
   end
 
@@ -22,9 +25,13 @@ class Wordle
     @current_guess = (@possibilities.min_by { |_, v| -v })[0]
   end
 
-  def top_ten_words
+  def top_words(words: 10, random: false)
     rate_words
-    @possibilities.sort_by { |_, v| -v }.first(10).to_h.keys.shuffle
+    if random
+      @possibilities.sort_by { |_, v| -v }.first(words).to_h.keys.shuffle
+    else
+      @possibilities.sort_by { |_, v| -v }.first(words).to_h.keys
+    end
   end
 
   def found?
@@ -36,11 +43,11 @@ class Wordle
   end
 
   def word_date(word)
-    start_date + @ordered_word_list.index(word)
+    start_date.to_date + @ordered_word_list.index(word)
   end
 
   def todays_word
-    index = Date.today - start_date - 1
+    index = @zone.now.to_date - start_date.to_date
     @ordered_word_list[index]
   end
 
@@ -365,7 +372,7 @@ class Wordle
 
   # Date when wordle started
   def start_date
-    @start_date ||= Date.new(2021, 6, 19)
+    @zone.local_time(2021, 6, 19, 0, 00, 0)
   end
 
   def set_word_lists

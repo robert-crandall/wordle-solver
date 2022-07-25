@@ -15,7 +15,7 @@ def interactive_mode
     puts "Try one of these words:"
     # puts "(Hint: first letter of top word is #{@wordle.top_ten_words[0][0]}#{@wordle.top_ten_words[0][1]})"
 
-    puts @wordle.top_ten_words
+    puts @wordle.top_words
     puts
     puts "Which word did you select?"
     @wordle.guess(gets.chomp)
@@ -31,11 +31,34 @@ end
 
 def get_hint
   wordle = Wordle.new()
-  server = Server.new("fluff")
+  # puts "Todays word: #{wordle.todays_word}"
+  server = Server.new(wordle.todays_word)
   (1..1).each do |i|
-    wordle.parse_answer(server.parse_guess(wordle.top_rated_word))
-    puts "Hint ##{i}: #{wordle.top_ten_words}"
+    top_score = 0
+    top_word = ""
+    word_scores = {}
+    wordle.top_words(words: 50).each do |word|
+      this_score = server.score_guess(word)
+      word_scores[word] = this_score
+      if this_score > top_score
+        top_score = this_score
+        top_word = word
+      end
+    end
+    puts "top guess from round #{i}: #{top_word}"
+    wordle.guess(top_word)
+    puts "Ranked choice round 1:"
+    puts word_scores.select { |_, score| score.positive? }
+    wordle.parse_answer(server.parse_guess(top_word))
   end
+  puts "And top 10 words after that hint:"
+  puts wordle.top_words
+  # (1..2).each do |i|
+  #   top_rated_word = wordle.top_rated_word
+  #   puts "Starting a guess with #{top_rated_word}, which matches as #{server.parse_guess(top_rated_word)}"
+  #   wordle.parse_answer(server.parse_guess(top_rated_word))
+  #   puts "Hint ##{i}: #{wordle.top_ten_words}"
+  # end
 end
 
 opts.each do |opt, arg|
