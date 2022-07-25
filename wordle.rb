@@ -1,4 +1,5 @@
 require_relative 'word_matcher'
+require_relative 'server'
 require 'json'
 require 'date'
 require 'tzinfo'
@@ -14,15 +15,21 @@ class Wordle
     @guesses = 0
     @found = false
     @broke = false
+    @best_word_higher = true # Ok, this is a hack. Two different word rating systems produce different results.
     @zone = TZInfo::Timezone.get('America/Los_Angeles')
     set_word_lists
   end
 
   def top_rated_word
-    rate_words
+    rate_words_with_group_size
     @guesses += 1
     check_breakage
-    @current_guess = (@possibilities.min_by { |_, v| -v })[0]
+    if @best_word_higher
+      @current_guess = (@possibilities.min_by { |_, v| -v })[0]
+    else
+      @current_guess = (@possibilities.min_by { |_, v| v })[0]
+    end
+    @current_guess
   end
 
   def top_words(words: 10, random: false)
@@ -274,6 +281,7 @@ class Wordle
 
   # Look over possible guesses, and rates them according to the given distribution
   def rate_words
+    @best_word_higher = true
     word_matcher.refresh_regex_pattern
     word_matcher.refresh_found_letters_count
     @positional_ratings = positional_ratings?
@@ -289,6 +297,31 @@ class Wordle
       @possibilities[word] = rate_word(word)
     end
   end
+
+    # Look over possible guesses, and rates them according to the given distribution
+    def rate_words_with_group_size
+      @best_word_higher = false
+
+      word_matcher.refresh_regex_pattern
+      word_matcher.refresh_found_letters_count
+      # @positional_ratings = positional_ratings?
+
+      # create_distribution
+
+      @possibilities = {}
+
+      # @needed_letters = needed_letters
+
+      if @guesses == 0 # first guess
+        @possibilities["raise"] = 10 # Sorry!
+        return
+      end
+
+      # Try to rule out remaining letters
+      @possible_answers.each do |word| ## TODO - what if this is word_list?
+        @possibilities[word] = find_largest_word_group(word)
+      end
+    end
 
   def rate_word(word)
     rating = 0
@@ -322,6 +355,21 @@ class Wordle
       end
     end
   end
+
+  ## Given this guess, what's the largest group of words that match the guess?
+  def find_largest_word_group(guess)
+    answer_groups = {}
+    @possible_answers.each do |possible_answer|
+      server = Server.new(possible_answer)
+      parsed_guess = server.parse_guess(guess)
+      answer_groups[parsed_guess] = 0 if answer_groups[parsed_guess].nil? # Initialize this group
+      answer_groups[parsed_guess] += 1
+    end
+    largest_group_size = answer_groups.max_by { |_, count| count }.last
+    # puts "Largest group for guess #{guess}: #{answer_groups.max_by { |_, count| count }}" # if debug?
+    return largest_group_size
+  end
+
 
   # Creates a map of how likely letters are to be at a certain position
   # IE, given words cat and cow:
